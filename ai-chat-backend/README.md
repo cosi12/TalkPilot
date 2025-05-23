@@ -2,8 +2,8 @@
 
 ## 1. 项目简介 (Project Introduction)
 
-本项目是 AI 聊天助手应用的后端服务。当前模块主要实现了用户系统（User System）的基础功能，包括用户注册、登录、信息获取与更新。
-项目基于 [NestJS](https://nestjs.com/) 框架构建，使用 [PostgreSQL](https://www.postgresql.org/) 作为数据库。
+本项目是 AI 聊天助手应用的后端服务。当前模块主要实现了用户系统（User System）的基础功能，包括用户注册、登录、信息获取与更新。后续扩展了群组 (Group) 和实时聊天 (Chat) 功能。
+项目基于 [NestJS](https://nestjs.com/) 框架构建，使用 [PostgreSQL](https://www.postgresql.org/) 作为数据库，并采用 [Socket.IO](https://socket.io/) 实现 WebSocket 通信。
 
 ## 2. 环境要求 (Prerequisites)
 
@@ -77,6 +77,7 @@ npm run start:dev
 *   **框架 (Framework):** [NestJS](https://nestjs.com/) (@nestjs/core, @nestjs/common, etc.)
 *   **ORM:** [TypeORM](https://typeorm.io/) (与 PostgreSQL 交互)
 *   **数据库 (Database):** [PostgreSQL](https://www.postgresql.org/)
+*   **WebSocket:** `@nestjs/websockets`, `@nestjs/platform-socket.io`, `socket.io`
 *   **认证 (Authentication):**
     *   `@nestjs/jwt` & `passport-jwt`: 实现基于 JSON Web Token (JWT) 的认证策略。
     *   `@nestjs/passport` & `passport`: 认证中间件基础。
@@ -259,5 +260,278 @@ npm run start:dev
     *   `400 Bad Request`: 请求体验证失败 (例如，avatarUrl格式错误)。
     *   `401 Unauthorized`: 未提供有效的 JWT 或 JWT 已过期。
     *   `404 Not Found`: 用户在数据库中未找到。
+
+---
+
+### 5.6. 创建群组 (Create Group)
+
+*   **Method:** `POST`
+*   **Path:** `/groups`
+*   **Description:** 创建一个新的群组，当前用户将成为群主。
+*   **Authentication:** JWT Bearer Token required.
+*   **Request Body:** `CreateGroupDto`
+    *   `name` (string, required, minLength: 3, maxLength: 50): 群组名称
+    *   **Example:**
+        ```json
+        {
+          "name": "我的技术研讨小组"
+        }
+        ```
+*   **Success Response (201 Created):** 返回创建成功的群组对象 (包含群主信息，群主信息已脱敏)。
+    *   **Example:**
+        ```json
+        {
+          "id": 1,
+          "name": "我的技术研讨小组",
+          "owner": {
+            "id": 1,
+            "username": "ownerUser",
+            "nickname": "群主昵称",
+            "avatarUrl": null,
+            "createdAt": "2023-10-27T09:00:00.000Z",
+            "updatedAt": "2023-10-27T09:00:00.000Z"
+          },
+          "createdAt": "2023-10-28T12:00:00.000Z",
+          "updatedAt": "2023-10-28T12:00:00.000Z"
+        }
+        ```
+*   **Error Responses:**
+    *   `400 Bad Request`: 请求体验证失败 (例如，群组名称不符合要求)。
+    *   `401 Unauthorized`: 未提供有效的 JWT 或 JWT 已过期。
+    *   `404 Not Found`: (理论上创建者用户应存在) 群主用户ID未找到。
+
+---
+
+### 5.7. 加入群组 (Join Group)
+
+*   **Method:** `POST`
+*   **Path:** `/groups/:groupId/join`
+*   **Description:** 当前用户加入指定的群组。
+*   **Authentication:** JWT Bearer Token required.
+*   **Params:**
+    *   `groupId` (integer, required): 目标群组的ID。
+*   **Success Response (201 Created):** 返回 `GroupMember` 对象，表示成功加入。
+    *   **Example:**
+        ```json
+        {
+          "id": 10, // GroupMember 记录的 ID
+          "user": { // 加入群组的用户信息 (已脱敏)
+            "id": 2,
+            "username": "joiningUser",
+            "nickname": "小明",
+            "avatarUrl": null,
+            "createdAt": "2023-10-27T10:00:00.000Z",
+            "updatedAt": "2023-10-27T10:00:00.000Z"
+          },
+          "group": { // 所加入的群组信息 (部分)
+            "id": 1,
+            "name": "我的技术研讨小组",
+            "owner": { "id": 1, "username": "ownerUser" }, // 通常仅包含ID和关键信息
+            "createdAt": "2023-10-28T12:00:00.000Z",
+            "updatedAt": "2023-10-28T12:00:00.000Z"
+          },
+          "joinedAt": "2023-10-28T13:00:00.000Z"
+        }
+        ```
+*   **Error Responses:**
+    *   `401 Unauthorized`: 未提供有效的 JWT 或 JWT 已过期。
+    *   `404 Not Found`: 指定的 `userId` (当前用户) 或 `groupId` 未找到。
+    *   `409 Conflict`: 用户已经是该群组的成员。
+
+---
+
+### 5.8. 获取用户加入的群组列表 (List Groups for User)
+
+*   **Method:** `GET`
+*   **Path:** `/groups`
+*   **Description:** 获取当前登录用户已加入的所有群组列表。
+*   **Authentication:** JWT Bearer Token required.
+*   **Success Response (200 OK):** 返回一个群组对象的数组 (群主信息已脱敏)。
+    *   **Example:**
+        ```json
+        [
+          {
+            "id": 1,
+            "name": "我的技术研讨小组",
+            "owner": { "id": 1, "username": "ownerUser", ... },
+            "createdAt": "...",
+            "updatedAt": "..."
+          },
+          {
+            "id": 2,
+            "name": "羽毛球爱好者",
+            "owner": { "id": 3, "username": "anotherUser", ... },
+            "createdAt": "...",
+            "updatedAt": "..."
+          }
+        ]
+        ```
+*   **Error Responses:**
+    *   `401 Unauthorized`: 未提供有效的 JWT 或 JWT 已过期。
+    *   `404 Not Found`: (理论上当前用户应存在) 当前用户ID未找到。
+
+---
+
+### 5.9. 获取特定群组信息 (Get Specific Group Details)
+
+*   **Method:** `GET`
+*   **Path:** `/groups/:groupId`
+*   **Description:** 获取指定群组的详细信息。要求用户必须是该群组的成员。
+*   **Authentication:** JWT Bearer Token required.
+*   **Params:**
+    *   `groupId` (integer, required): 目标群组的ID。
+*   **Success Response (200 OK):** 返回群组对象，包含群主信息和成员列表 (所有用户信息均已脱敏)。
+    *   **Example:**
+        ```json
+        {
+          "id": 1,
+          "name": "我的技术研讨小组",
+          "owner": { "id": 1, "username": "ownerUser", ... },
+          "members": [
+            {
+              "id": 1, // GroupMember ID
+              "user": { "id": 1, "username": "ownerUser", ... },
+              "joinedAt": "..."
+            },
+            {
+              "id": 10, // GroupMember ID
+              "user": { "id": 2, "username": "joiningUser", ... },
+              "joinedAt": "..."
+            }
+          ],
+          "createdAt": "...",
+          "updatedAt": "..."
+        }
+        ```
+*   **Error Responses:**
+    *   `401 Unauthorized`: 未提供有效的 JWT 或 JWT 已过期。
+    *   `403 Forbidden`: 当前用户不是该群组的成员。
+    *   `404 Not Found`: 指定的 `groupId` 未找到。
+
+---
+
+### 5.10. 获取群组历史消息 (Get Group Message History)
+
+*   **Method:** `GET`
+*   **Path:** `/groups/:groupId/messages`
+*   **Description:** 获取指定群组的聊天历史消息。要求用户必须是该群组的成员。
+*   **Authentication:** JWT Bearer Token required.
+*   **Params:**
+    *   `groupId` (integer, required): 目标群组的ID。
+*   **Query Params:**
+    *   `page` (integer, optional, default: 1): 页码。
+    *   `limit` (integer, optional, default: 50, max: 100): 每页消息数量。
+*   **Success Response (200 OK):** 返回一个包含消息数组和总消息数的对象。消息中包含发送者信息 (已脱敏)。
+    *   **Example:**
+        ```json
+        {
+          "messages": [
+            {
+              "id": 1,
+              "content": "大家好",
+              "user": { "id": 1, "username": "testuser", "nickname": "测试用户", ... },
+              "group": { "id": 1 }, // 通常只包含ID，或根据需要扩展
+              "createdAt": "2023-10-28T14:00:00.000Z"
+            },
+            {
+              "id": 2,
+              "content": "你好！",
+              "user": { "id": 2, "username": "anotherUser", "nickname": "小明", ... },
+              "group": { "id": 1 },
+              "createdAt": "2023-10-28T14:01:00.000Z"
+            }
+          ],
+          "total": 250
+        }
+        ```
+*   **Error Responses:**
+    *   `401 Unauthorized`: 未提供有效的 JWT 或 JWT 已过期。
+    *   `403 Forbidden`: 当前用户不是该群组的成员。
+    *   `404 Not Found`: 指定的 `groupId` 未找到。
+
+---
+
+## 6. WebSocket 接口文档 (WebSocket API Documentation)
+
+### 6.1. 命名空间 (Namespace)
+
+*   `/chat`
+
+### 6.2. 认证 (Authentication)
+
+客户端在建立 WebSocket 连接时，必须通过 `socket.handshake.auth.token` 或 `socket.handshake.headers.authorization` (Bearer Token 格式) 提供有效的 JWT。
+如果认证失败，服务器将发送一个 `auth_error` 事件给客户端，并断开连接。
+
+### 6.3. 客户端事件 (Client Emitted Events)
+
+以下是客户端可以向服务器发送的事件：
+
+#### 6.3.1. `joinRoom`
+
+*   **Payload:**
+    ```json
+    {
+      "groupId": number // 要加入的群组ID
+    }
+    ```
+*   **Description:** 客户端在成功连接 WebSocket 后，请求加入指定群组的聊天室。服务器会验证用户是否为该群组成员。
+*   **Server Response (Acknowledgement/Callback):**
+    *   成功: ` { status: 'success', message: 'Joined room for group <groupId>' } `
+    *   失败: 通过 `WsException` 抛出错误，客户端通常会收到一个包含错误信息的对象，例如 ` { status: 'error', message: 'User not authenticated.' } ` 或 ` { status: 'error', message: 'You are not a member of this group.' } `。
+
+#### 6.3.2. `leaveRoom`
+
+*   **Payload:**
+    ```json
+    {
+      "groupId": number // 要离开的群组ID
+    }
+    ```
+*   **Description:** 客户端请求离开指定群组的聊天室。
+*   **Server Response (Acknowledgement/Callback):**
+    *   成功: ` { status: 'success', message: 'Left room for group <groupId>' } `
+
+#### 6.3.3. `sendMessage`
+
+*   **Payload:**
+    ```json
+    {
+      "groupId": number,  // 消息目标群组ID
+      "content": string   // 消息内容
+    }
+    ```
+*   **Description:** 客户端向指定的群组发送一条消息。服务器会验证用户是否为该群组成员，然后将消息保存并广播给房间内的其他成员。
+*   **Server Response:**
+    *   如果消息处理失败（例如，用户无权在群组发言，或内容验证失败），服务器会向**发送方客户端**发送一个 `sendMessageError` 事件。
+        *   **Event:** `sendMessageError`
+        *   **Payload:** ` { status: 'error', message: string, groupId: number } `
+
+### 6.4. 服务端事件 (Server Emitted Events)
+
+以下是服务器会向客户端发送的事件：
+
+#### 6.4.1. `newMessage`
+
+*   **Payload:** Message object (与 HTTP `/groups/:groupId/messages` 接口返回的消息对象结构一致，包含已脱敏的发送者用户信息)。
+    ```json
+    {
+      "id": 3,
+      "content": "这是一条新消息",
+      "user": { "id": 1, "username": "senderUser", "nickname": "发送者", ... },
+      "group": { "id": 1 }, // 可能仅包含ID
+      "createdAt": "2023-10-28T15:00:00.000Z"
+    }
+    ```
+*   **Description:** 当有新消息发送到某个群组时，服务器会将此消息广播给所有在该群组聊天室（room）中的客户端。
+
+#### 6.4.2. `auth_error`
+
+*   **Payload:**
+    ```json
+    {
+      "message": string // 描述认证失败的原因
+    }
+    ```
+*   **Description:** 如果客户端在 WebSocket 连接握手阶段的认证失败，服务器会向该客户端发送此事件，并随后断开连接。
 
 ---
