@@ -39,14 +39,14 @@ export class ChatService {
 
     try {
       const savedMessage = await this.messagesRepository.save(newMessage);
-      
+
       // Prepare the message for return, ensuring user data is sanitized
       // The 'user' relation is already loaded because we assigned the entity.
       // We need to make sure passwordHash is not part of the returned user object.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { passwordHash, ...sanitizedUser } = user;
       savedMessage.user = sanitizedUser as User;
-      
+
       return savedMessage;
     } catch (error) {
       console.error('Error creating message:', error);

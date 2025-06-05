@@ -85,7 +85,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       // Attach user info to the socket object
       client.user = { userId: payload.sub, username: payload.username };
-      
+
       this.connectedClients.set(client.user.userId, client);
       this.logger.log(`Client connected: ${client.id}, UserID: ${client.user.userId}, Username: ${client.user.username}`);
     } catch (error) {
@@ -162,7 +162,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     try {
       // chatService.createMessage handles member check via groupsService.findGroupWithMemberCheck
       const message = await this.chatService.createMessage(content, userId, groupId);
-      
+
       const roomName = `group_${groupId}`;
       this.server.to(roomName).emit('newMessage', message); // Emit to all clients in the room
       this.logger.log(`Message broadcasted to room: ${roomName}`);

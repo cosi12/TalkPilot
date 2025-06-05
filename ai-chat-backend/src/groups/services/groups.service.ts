@@ -36,7 +36,7 @@ export class GroupsService {
         user: owner,
       });
       await this.groupMembersRepository.save(ownerMember);
-      
+
       // Return the group with its owner relation populated.
       // To include members list, it would typically be fetched separately or ensured via relations in findOne.
       return savedGroup;
@@ -91,12 +91,12 @@ export class GroupsService {
       // Or return empty array depending on desired behavior
       throw new NotFoundException(`User with ID ${userId} not found.`);
     }
-  
+
     const groupMemberships = await this.groupMembersRepository.find({
       where: { user: { id: userId } },
       relations: ['group', 'group.owner'], // Load the group and its owner
     });
-  
+
     return groupMemberships.map(gm => {
       // Ensure owner's passwordHash is not exposed if it was loaded
       if (gm.group && gm.group.owner) {
@@ -107,7 +107,7 @@ export class GroupsService {
       return gm.group;
     });
   }
-  
+
   async findGroupWithMemberCheck(groupId: number, userId: number): Promise<Group | null> {
     const group = await this.groupsRepository.findOne({
       where: { id: groupId },
@@ -125,7 +125,7 @@ export class GroupsService {
       // For this case, let's throw, as accessing a group you're not part of is usually forbidden
       throw new ForbiddenException('You are not a member of this group.');
     }
-    
+
     // Sanitize owner and member data before returning
     if (group.owner) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
